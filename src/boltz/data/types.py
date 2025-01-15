@@ -110,7 +110,7 @@ Residue = [
 ]
 
 Chain = [
-    ("name", np.dtype("<U5")),
+    ("name", np.dtype("<U32")),
     ("mol_type", np.dtype("i1")),
     ("entity_id", np.dtype("i4")),
     ("sym_id", np.dtype("i4")),
