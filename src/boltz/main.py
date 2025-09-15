@@ -730,6 +730,21 @@ def process_inputs(
     return manifest
 
 
+def set_cuda_memory_fraction(cuda_memory_gb: int = None):
+    """Set CUDA memory fraction as a ratio of requested GB to detected total VRAM."""
+    if cuda_memory_gb is None:
+        return
+    if not torch.cuda.is_available():
+        print("CUDA is not available, cannot set CUDA memory fraction.")
+        return
+    total_vram_bytes = torch.cuda.get_device_properties(0).total_memory
+    total_vram_gb = int(round(total_vram_bytes / 1024**3))
+    print(f"Detected GPU VRAM: {total_vram_gb} GB")
+    vram_fraction = cuda_memory_gb / total_vram_gb
+    torch.cuda.set_per_process_memory_fraction(vram_fraction)
+    print(f"Set CUDA memory fraction to {vram_fraction:.4f} for {cuda_memory_gb} GB out of {total_vram_gb} GB")
+
+
 @click.group()
 def cli() -> None:
     """Boltz."""
@@ -973,6 +988,12 @@ def cli() -> None:
     is_flag=True,
     help="Whether to not use trifast kernels for triangular updates. Default False",
 )
+@click.option(
+    "--cuda_memory_gb",
+    type=int,
+    help="Set CUDA memory fraction for a target GPU memory size (GB). If not set, no limit.",
+    default=None,
+)
 def predict(  # noqa: C901, PLR0915, PLR0912
     data: str,
     out_dir: str,
@@ -1014,6 +1035,7 @@ def predict(  # noqa: C901, PLR0915, PLR0912
     subsample_msa: bool = True,
     num_subsampled_msa: int = 1024,
     no_trifast: bool = False,
+    cuda_memory_gb: int = None,
 ) -> None:
     """Run predictions with Boltz."""
     # If cpu, write a friendly warning
@@ -1238,7 +1260,10 @@ def predict(  # noqa: C901, PLR0915, PLR0912
             steering_args=asdict(steering_args),
         )
         model_module.eval()
-        
+
+        # Set CUDA memory fraction if requested
+        set_cuda_memory_fraction(cuda_memory_gb)
+
         if use_bfloat16:
             # Compute structure predictions
             with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
