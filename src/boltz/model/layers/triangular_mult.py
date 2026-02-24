@@ -188,16 +188,201 @@ class _TriangleMultiplication(nn.Module):
         x *= self.g_out(x_in).sigmoid()
         return x
 
+    def _inference_forward(
+        self,
+        x: Tensor,
+        mask: Optional[Tensor] = None,
+        inplace_chunk_size: Optional[int] = None,
+        with_add: bool = True,
+        triangle_mult_gate_nchunks: int = 1,
+    ) -> Tensor:
+        if mask is None:
+            mask = x.new_ones(x.shape[:-1])
+
+        if inplace_chunk_size is None:
+            msg = "inplace_chunk_size must be provided for _inference_forward"
+            raise ValueError(msg)
+
+        assert mask is not None
+
+        mask = mask.unsqueeze(-1)
+
+        def compute_projection_helper(
+            pair: Tensor,
+            pair_mask: Tensor,
+            project_a: bool,
+        ) -> Tensor:
+            pair = self.norm_in(pair)
+            proj = self._project_input(pair, triangle_mult_gate_nchunks)
+            proj_a, proj_b = torch.chunk(proj, 2, dim=-1)
+            projection = proj_a if project_a else proj_b
+            projection *= pair_mask
+            projection = permute_final_dims(projection, [2, 0, 1])
+            return projection
+
+        def compute_projection(
+            pair: Tensor,
+            pair_mask: Tensor,
+            project_a: bool,
+            chunked: bool,
+        ) -> Tensor:
+            need_transpose = self.outgoing ^ project_a
+            if not chunked:
+                projection = compute_projection_helper(pair, pair_mask, project_a)
+                if need_transpose:
+                    projection = projection.transpose(-1, -2)
+                return projection
+
+            out_shape = pair.shape[:-3] + (self.dim,) + pair.shape[-3:-1]
+            projection = pair.new_zeros(out_shape)
+            for i in range(0, pair.shape[-3], inplace_chunk_size):
+                chunk = compute_projection_helper(
+                    pair[..., i : i + inplace_chunk_size, :, :],
+                    pair_mask[..., i : i + inplace_chunk_size, :, :],
+                    project_a,
+                )
+                if need_transpose:
+                    chunk = chunk.transpose(-1, -2)
+                    projection[..., i : i + inplace_chunk_size] = chunk
+                else:
+                    projection[..., i : i + inplace_chunk_size, :] = chunk
+            return projection
+
+        a = compute_projection(x, mask, project_a=True, chunked=True)
+
+        n = a.shape[-1]
+        half_n = n // 2 + n % 2
+        row_dim = -3
+        col_dim = -2
+        b_chunk_dim = row_dim if self.outgoing else col_dim
+
+        def empty_slicer(t: Tensor) -> list[slice]:
+            return [slice(None) for _ in t.shape]
+
+        def slice_tensor(
+            t: Tensor,
+            start: int,
+            end: Optional[int],
+            dim: int,
+        ) -> Tensor:
+            slicer = empty_slicer(t)
+            slicer[dim] = slice(start, end)
+            return t[tuple(slicer)]
+
+        def flip_z_cache_(z_cache: Tensor, pair: Tensor) -> Tensor:
+            quadrant_3 = slice_tensor(z_cache, half_n, None, row_dim)
+            z_cache = z_cache.transpose(row_dim, col_dim)
+            z_cache = z_cache[..., : (n // 2), :, :]
+
+            first_half_slicer = empty_slicer(z_cache)
+            first_half_slicer[col_dim] = slice(0, half_n)
+            z_cache[tuple(first_half_slicer)] = quadrant_3
+
+            quadrant_4 = slice_tensor(pair, half_n, None, row_dim)
+            quadrant_4 = slice_tensor(quadrant_4, half_n, None, col_dim)
+
+            quadrant_3_slicer = empty_slicer(z_cache)
+            quadrant_3_slicer[col_dim] = slice(half_n, None)
+            z_cache[tuple(quadrant_3_slicer)] = quadrant_4
+            return z_cache
+
+        z_cache_shape = list(x.shape)
+        z_cache_shape[col_dim] = half_n
+        z_cache = x.new_zeros(z_cache_shape)
+        z_cache_slicer = empty_slicer(z_cache)
+        z_cache_slicer[col_dim] = slice(0, half_n)
+        z_cache.copy_(x[tuple(z_cache_slicer)])
+        z_cache_rotated = False
+
+        i_range = list(range(0, half_n, inplace_chunk_size))
+        initial_offsets = [
+            i_2 - i_1 for i_1, i_2 in zip(i_range, i_range[1:] + [half_n])
+        ]
+        after_half = list(range(half_n, n, inplace_chunk_size))
+        after_half_offsets = [inplace_chunk_size for _ in after_half]
+        combined_range_with_offsets = zip(
+            i_range + after_half, initial_offsets + after_half_offsets
+        )
+
+        for i, offset in combined_range_with_offsets:
+            if not z_cache_rotated and i >= half_n:
+                z_cache = flip_z_cache_(z_cache, x)
+                z_cache_rotated = True
+
+            x_chunk_b = slice_tensor(x, i, i + offset, b_chunk_dim)
+            mask_chunk = slice_tensor(mask, i, i + offset, b_chunk_dim)
+
+            x_chunk_b = x_chunk_b.clone()
+            if b_chunk_dim == col_dim:
+                x_chunk_b = slice_tensor(x, i, i + offset, col_dim)
+            else:
+                if not z_cache_rotated:
+                    x_chunk_slicer = empty_slicer(x_chunk_b)
+                    x_chunk_slicer[col_dim] = slice(0, half_n)
+                    x_chunk_b[tuple(x_chunk_slicer)] = slice_tensor(
+                        z_cache,
+                        i,
+                        i + offset,
+                        row_dim,
+                    )
+                else:
+                    z_cache_offset = i - half_n
+                    x_chunk_b = slice_tensor(
+                        z_cache,
+                        z_cache_offset,
+                        z_cache_offset + offset,
+                        row_dim,
+                    )
+
+            b_chunk = compute_projection(
+                x_chunk_b,
+                mask_chunk,
+                project_a=False,
+                chunked=False,
+            )
+
+            x_chunk = torch.matmul(a, b_chunk)
+            x_chunk = permute_final_dims(x_chunk, [1, 2, 0])
+            x_chunk = self.norm_out(x_chunk)
+            x_chunk = self.p_out(x_chunk)
+
+            x_chunk_g = slice_tensor(x, i, i + offset, col_dim)
+            g_chunk = self.g_out(self.norm_in(x_chunk_g)).sigmoid()
+            x_chunk *= g_chunk
+
+            x_slicer = empty_slicer(x)
+            x_slicer[col_dim] = slice(i, i + offset)
+            if with_add:
+                x[tuple(x_slicer)] += x_chunk
+            else:
+                x[tuple(x_slicer)] = x_chunk
+
+        return x
+
     def forward(
         self,
         x: Tensor,
         mask: Optional[Tensor] = None,
         triangle_mult_gate_nchunks: int = 1,
         triangle_multiplicative: str = "torch",
+        use_kernels: bool = False,
+        inplace_safe: bool = False,
         _inplace_chunk_size: Optional[int] = None,
         _input_inplace_safe: bool = False,
         _add_with_inplace: bool = False,
     ) -> Tensor:
+        if (
+            use_kernels
+            and triangle_multiplicative == "torch"
+            and triangle_multiplicative_update is not None
+        ):
+            triangle_multiplicative = "cuequivariance"
+
+        if inplace_safe and _inplace_chunk_size is None:
+            _inplace_chunk_size = 256
+
+        _effective_input_inplace_safe = _input_inplace_safe or inplace_safe
+
         if (
             not self._debug_logged
             and os.getenv("BOLTZ_DEBUG_TRI_MULT", "0") in {"1", "true", "TRUE"}
@@ -219,7 +404,11 @@ class _TriangleMultiplication(nn.Module):
             mask = x.new_ones(x.shape[:-1])
 
         if triangle_multiplicative == "cuequivariance":
-            x_in = x.clone() if (_input_inplace_safe and _add_with_inplace) else None
+            x_in = (
+                x.clone()
+                if (_effective_input_inplace_safe and _add_with_inplace)
+                else None
+            )
             x = kernel_triangular_mult(
                 x,
                 direction="outgoing" if self.outgoing else "incoming",
@@ -241,13 +430,22 @@ class _TriangleMultiplication(nn.Module):
         if triangle_multiplicative != "torch":
             raise InvalidTriangleMultiplicativeError(triangle_multiplicative)
 
+        if _effective_input_inplace_safe and _inplace_chunk_size is not None:
+            return self._inference_forward(
+                x,
+                mask,
+                inplace_chunk_size=_inplace_chunk_size,
+                with_add=_add_with_inplace,
+                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+            )
+
         out = self._forward_torch(
             x,
             mask,
             triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
             _inplace_chunk_size=_inplace_chunk_size,
         )
-        if _input_inplace_safe and _add_with_inplace:
+        if _effective_input_inplace_safe and _add_with_inplace:
             out = out + x
         return out
 

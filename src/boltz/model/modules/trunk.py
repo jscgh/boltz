@@ -420,12 +420,38 @@ class MSALayer(nn.Module):
         #dropout = get_dropout_mask(self.z_dropout, z, self.training)
         #z = z + dropout * self.tri_mul_out(z, mask=token_mask)
         get_dropout_mask(self.z_dropout, z, self.training)
-        z += self.tri_mul_out(z, mask=token_mask, triangle_mult_gate_nchunks=triangle_mult_gate_nchunks)
+        if self.training:
+            z += self.tri_mul_out(
+                z,
+                mask=token_mask,
+                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+            )
+        else:
+            z = self.tri_mul_out(
+                z,
+                mask=token_mask,
+                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                inplace_safe=True,
+                _add_with_inplace=True,
+            )
 
         #dropout = get_dropout_mask(self.z_dropout, z, self.training)
         #z = z + dropout * self.tri_mul_in(z, mask=token_mask)
         get_dropout_mask(self.z_dropout, z, self.training)
-        z += self.tri_mul_in(z, mask=token_mask, triangle_mult_gate_nchunks=triangle_mult_gate_nchunks)
+        if self.training:
+            z += self.tri_mul_in(
+                z,
+                mask=token_mask,
+                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+            )
+        else:
+            z = self.tri_mul_in(
+                z,
+                mask=token_mask,
+                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                inplace_safe=True,
+                _add_with_inplace=True,
+            )
 
         #dropout = get_dropout_mask(self.z_dropout, z, self.training)
         #z = z + dropout * self.tri_att_start(
@@ -665,12 +691,38 @@ class PairformerLayer(nn.Module):
         #dropout = get_dropout_mask(self.dropout, z, self.training)
         #z = z + dropout * self.tri_mul_out(z, mask=pair_mask)
         get_dropout_mask(self.dropout, z, self.training)
-        z += self.tri_mul_out(z, mask=pair_mask, triangle_mult_gate_nchunks=triangle_mult_gate_nchunks)
+        if self.training:
+            z += self.tri_mul_out(
+                z,
+                mask=pair_mask,
+                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+            )
+        else:
+            z = self.tri_mul_out(
+                z,
+                mask=pair_mask,
+                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                inplace_safe=True,
+                _add_with_inplace=True,
+            )
 
         #dropout = get_dropout_mask(self.dropout, z, self.training)
         #z = z + dropout * self.tri_mul_in(z, mask=pair_mask)
         get_dropout_mask(self.dropout, z, self.training)
-        z += self.tri_mul_in(z, mask=pair_mask, triangle_mult_gate_nchunks=triangle_mult_gate_nchunks)
+        if self.training:
+            z += self.tri_mul_in(
+                z,
+                mask=pair_mask,
+                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+            )
+        else:
+            z = self.tri_mul_in(
+                z,
+                mask=pair_mask,
+                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                inplace_safe=True,
+                _add_with_inplace=True,
+            )
 
         #dropout = get_dropout_mask(self.dropout, z, self.training)
         #z = z + dropout * self.tri_att_start(
