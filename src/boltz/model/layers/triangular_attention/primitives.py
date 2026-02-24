@@ -516,51 +516,56 @@ class Attention(nn.Module):
         elif use_flash:
             o = _flash_attn(q, k, v, flash_mask)
         elif use_trifast and trifast_is_usable:
-            #o = _trifast_attn(q, k, v, biases)
-     
-            orig_n_dims = len(q.shape)
+            q_base = q
+            k_base = k
+            v_base = v
+            try:
+                orig_n_dims = len(q.shape)
 
-            if len(biases) != 2:
-                raise ValueError(f"Trifast expects two bias terms, found {len(biases)}")
+                if len(biases) != 2:
+                    raise ValueError(
+                        f"Trifast expects two bias terms, found {len(biases)}"
+                    )
 
-            mask, b = biases
+                mask, b = biases
 
-            if len(b.shape) == 5:
-                b = b.squeeze(1)
+                if len(b.shape) == 5:
+                    b = b.squeeze(1)
 
-            if orig_n_dims == 4:
-                # add fake batch dim
-                q = q.unsqueeze(0)
-                k = k.unsqueeze(0)
-                v = v.unsqueeze(0)
-                mask = mask.unsqueeze(0)
+                if orig_n_dims == 4:
+                    q = q.unsqueeze(0)
+                    k = k.unsqueeze(0)
+                    v = v.unsqueeze(0)
+                    mask = mask.unsqueeze(0)
 
-            if len(q.shape) != 5:
-                raise ValueError(f"Trifast expects q/k/v to be 5D, found {len(q.shape)}")
+                if len(q.shape) != 5:
+                    raise ValueError(
+                        f"Trifast expects q/k/v to be 5D, found {len(q.shape)}"
+                    )
 
-            # Reorder q/k/v
-            q = rearrange(q, "b i h j d -> b h i j d")
-            k = rearrange(k, "b i h j d -> b h i j d")
-            v = rearrange(v, "b i h j d -> b h i j d")
+                q = rearrange(q, "b i h j d -> b h i j d")
+                k = rearrange(k, "b i h j d -> b h i j d")
+                v = rearrange(v, "b i h j d -> b h i j d")
+                mask = rearrange(mask, "b i () () j -> b i j").bool()
 
-            # Make mask the right shape.
-            mask = rearrange(mask, "b i () () j -> b i j").bool()
+                if trifast_is_installed:
+                    q = rearrange(q, "b h ... -> (b h) ...").contiguous()
+                    k = rearrange(k, "b h ... -> (b h) ...").contiguous()
+                    v = rearrange(v, "b h ... -> (b h) ...").contiguous()
+                    b = rearrange(b, "b h ... -> (b h) ...").contiguous()
+                    mask = mask.contiguous()
+                    o = triangle_attention(q, k, v, b, mask)
+                    o = rearrange(o, "(b h) ... -> b h ...", h=4, b=1).contiguous()
+                else:
+                    o = triangle_attention(q, k, v, b, mask)
 
-            if trifast_is_installed:
-                q = rearrange(q, "b h ... -> (b h) ...").contiguous()
-                k = rearrange(k, "b h ... -> (b h) ...").contiguous()
-                v = rearrange(v, "b h ... -> (b h) ...").contiguous()
-                b = rearrange(b, "b h ... -> (b h) ...").contiguous()
-                mask = mask.contiguous()
-                o = triangle_attention(q, k, v, b, mask)
-                o = rearrange(o, "(b h) ... -> b h ...", h=4, b=1).contiguous()
-            else:
-                o = triangle_attention(q, k, v, b, mask)
-            o = rearrange(o, "b h i j d -> b i j h d")
+                o = rearrange(o, "b h i j d -> b i j h d")
 
-            # Remove the batch dim if we added it.
-            if orig_n_dims == 4:
-                o = o.squeeze(0)
+                if orig_n_dims == 4:
+                    o = o.squeeze(0)
+            except Exception:
+                o = _attention(q_base, k_base, v_base, biases)
+                o = o.transpose(-2, -3)
 
         else:
             o = _attention(q, k, v, biases)
