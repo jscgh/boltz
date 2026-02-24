@@ -1,5 +1,3 @@
-import logging
-import os
 from typing import Optional
 
 import torch
@@ -11,76 +9,12 @@ from boltz.model.layers.triangular_attention.utils import (
     permute_final_dims,
 )
 
-try:
-    from cuequivariance_torch.primitives.triangle import triangle_multiplicative_update
-except ImportError:
-    triangle_multiplicative_update = None
-
-LOGGER = logging.getLogger(__name__)
-
-
-class InvalidTriangleMultiplicativeError(ValueError):
-    """Raised when triangle_multiplicative mode is invalid."""
-
-    def __init__(self, mode: str) -> None:
-        message = (
-            "triangle_multiplicative must be 'cuequivariance' or 'torch', "
-            f"but got {mode}"
-        )
-        super().__init__(message)
-
-
-class MissingCuequivarianceError(ImportError):
-    """Raised when cuequivariance backend is requested but unavailable."""
-
-    def __init__(self) -> None:
-        message = (
-            "cuequivariance_torch is not installed; "
-            "set triangle_multiplicative='torch'"
-        )
-        super().__init__(message)
-
-
-def kernel_triangular_mult(
-    x: Tensor,
-    direction: str,
-    mask: Tensor,
-    norm_in_weight: Tensor,
-    norm_in_bias: Tensor,
-    p_in_weight: Tensor,
-    g_in_weight: Tensor,
-    norm_out_weight: Tensor,
-    norm_out_bias: Tensor,
-    p_out_weight: Tensor,
-    g_out_weight: Tensor,
-    eps: float,
-) -> Tensor:
-    """Run cuequivariance triangle multiplicative update kernel."""
-    if triangle_multiplicative_update is None:
-        raise MissingCuequivarianceError
-
-    return triangle_multiplicative_update(
-        x,
-        direction=direction,
-        mask=mask,
-        norm_in_weight=norm_in_weight,
-        norm_in_bias=norm_in_bias,
-        p_in_weight=p_in_weight,
-        g_in_weight=g_in_weight,
-        norm_out_weight=norm_out_weight,
-        norm_out_bias=norm_out_bias,
-        p_out_weight=p_out_weight,
-        g_out_weight=g_out_weight,
-        eps=eps,
-    )
-
 
 class _TriangleMultiplication(nn.Module):
     def __init__(self, dim: int, outgoing: bool) -> None:
         super().__init__()
         self.dim = dim
         self.outgoing = outgoing
-        self._debug_logged = False
 
         self.norm_in = nn.LayerNorm(dim, eps=1e-5)
         self.p_in = nn.Linear(dim, 2 * dim, bias=False)
@@ -364,71 +298,18 @@ class _TriangleMultiplication(nn.Module):
         x: Tensor,
         mask: Optional[Tensor] = None,
         triangle_mult_gate_nchunks: int = 1,
-        triangle_multiplicative: str = "torch",
-        use_kernels: bool = False,
         inplace_safe: bool = False,
         _inplace_chunk_size: Optional[int] = None,
         _input_inplace_safe: bool = False,
         _add_with_inplace: bool = False,
     ) -> Tensor:
-        if (
-            use_kernels
-            and triangle_multiplicative == "torch"
-            and triangle_multiplicative_update is not None
-        ):
-            triangle_multiplicative = "cuequivariance"
-
         if inplace_safe and _inplace_chunk_size is None:
             _inplace_chunk_size = 64
 
         _effective_input_inplace_safe = _input_inplace_safe or inplace_safe
 
-        if (
-            not self._debug_logged
-            and os.getenv("BOLTZ_DEBUG_TRI_MULT", "0") in {"1", "true", "TRUE"}
-        ):
-            direction = "outgoing" if self.outgoing else "incoming"
-            LOGGER.warning(
-                "[triangular_mult] direction=%s backend=%s shape=%s dtype=%s "
-                "gate_nchunks=%s cuequivariance_available=%s",
-                direction,
-                triangle_multiplicative,
-                tuple(x.shape),
-                x.dtype,
-                triangle_mult_gate_nchunks,
-                triangle_multiplicative_update is not None,
-            )
-            self._debug_logged = True
-
         if mask is None:
             mask = x.new_ones(x.shape[:-1])
-
-        if triangle_multiplicative == "cuequivariance":
-            x_in = (
-                x.clone()
-                if (_effective_input_inplace_safe and _add_with_inplace)
-                else None
-            )
-            x = kernel_triangular_mult(
-                x,
-                direction="outgoing" if self.outgoing else "incoming",
-                mask=mask,
-                norm_in_weight=self.norm_in.weight,
-                norm_in_bias=self.norm_in.bias,
-                p_in_weight=self.p_in.weight,
-                g_in_weight=self.g_in.weight,
-                norm_out_weight=self.norm_out.weight,
-                norm_out_bias=self.norm_out.bias,
-                p_out_weight=self.p_out.weight,
-                g_out_weight=self.g_out.weight,
-                eps=1e-5,
-            )
-            if x_in is not None:
-                return x + x_in
-            return x
-
-        if triangle_multiplicative != "torch":
-            raise InvalidTriangleMultiplicativeError(triangle_multiplicative)
 
         if _effective_input_inplace_safe and _inplace_chunk_size is not None:
             return self._inference_forward(
