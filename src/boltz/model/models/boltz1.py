@@ -1,5 +1,6 @@
 import gc
 import random
+import traceback
 from typing import Any, Optional
 
 import torch
@@ -685,11 +686,12 @@ class Boltz1(LightningModule):
         except RuntimeError as e:  # catch out of memory exceptions
             if "out of memory" in str(e):
                 print("| WARNING: ran out of memory, skipping batch")
+                traceback.print_exc()
                 torch.cuda.empty_cache()
                 gc.collect()
                 return
             else:
-                raise e
+                raise
 
         try:
             # Compute distogram LDDT
@@ -739,11 +741,12 @@ class Boltz1(LightningModule):
         except RuntimeError as e:  # catch out of memory exceptions
             if "out of memory" in str(e):
                 print("| WARNING: ran out of memory, skipping batch")
+                traceback.print_exc()
                 torch.cuda.empty_cache()
                 gc.collect()
                 return
             else:
-                raise e
+                raise
         # if the multiplicity used is > 1 then we take the best lddt of the different samples
         # AF3 combines this with the confidence based filtering
         best_lddt_dict, best_total_dict = {}, {}
@@ -1257,6 +1260,7 @@ class Boltz1(LightningModule):
         except RuntimeError as e:  # catch out of memory exceptions
             if "out of memory" in str(e):
                 print("| WARNING: ran out of memory, skipping batch")
+                traceback.print_exc()
                 torch.cuda.empty_cache()
                 gc.collect()
                 return {"exception": True}

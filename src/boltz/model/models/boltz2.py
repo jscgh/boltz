@@ -1,4 +1,5 @@
 import gc
+import traceback
 from typing import Any, Optional
 
 import numpy as np
@@ -1090,10 +1091,11 @@ class Boltz2(LightningModule):
                 if "out of memory" in str(e):
                     msg = f"| WARNING: ran out of memory, skipping batch, {idx_dataset}"
                     print(msg)
+                    traceback.print_exc()
                     torch.cuda.empty_cache()
                     gc.collect()
                     return
-                raise e
+                raise
         else:
             try:
                 out = self(
@@ -1110,10 +1112,11 @@ class Boltz2(LightningModule):
                 if "out of memory" in str(e):
                     msg = f"| WARNING: ran out of memory, skipping batch, {idx_dataset}"
                     print(msg)
+                    traceback.print_exc()
                     torch.cuda.empty_cache()
                     gc.collect()
                     return
-                raise e
+                raise
 
     def on_validation_epoch_end(self):
         """Aggregate all metrics for each validator."""
@@ -1195,11 +1198,12 @@ class Boltz2(LightningModule):
         except RuntimeError as e:  # catch out of memory exceptions
             if "out of memory" in str(e):
                 print("| WARNING: ran out of memory, skipping batch")
+                traceback.print_exc()
                 torch.cuda.empty_cache()
                 gc.collect()
                 return {"exception": True}
             else:
-                raise {"exception": True}
+                raise
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure the optimizer."""

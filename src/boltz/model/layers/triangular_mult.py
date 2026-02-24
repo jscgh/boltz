@@ -379,7 +379,7 @@ class _TriangleMultiplication(nn.Module):
             triangle_multiplicative = "cuequivariance"
 
         if inplace_safe and _inplace_chunk_size is None:
-            _inplace_chunk_size = 256
+            _inplace_chunk_size = 64
 
         _effective_input_inplace_safe = _input_inplace_safe or inplace_safe
 
