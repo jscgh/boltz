@@ -48,7 +48,13 @@ class PairWeightedAveraging(nn.Module):
         init.final_init_(self.proj_o.weight)
 
     def forward(
-        self, m: Tensor, z: Tensor, mask: Tensor, chunk_heads: False = bool
+        self,
+        m: Tensor,
+        z: Tensor,
+        mask: Tensor,
+        chunk_heads: bool = False,
+        chunk_size_msa: int = None,
+        chunk_size_pair: int = None,
     ) -> Tensor:
         """Forward pass.
 
