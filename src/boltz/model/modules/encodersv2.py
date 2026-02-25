@@ -78,7 +78,6 @@ class RelativePositionEncoder(Module):
             b_same_chain, d_residue, torch.zeros_like(d_residue) + 2 * self.r_max + 1
         )
         a_rel_pos = one_hot(d_residue, 2 * self.r_max + 2)
-
         d_token = torch.clip(
             feats["token_index"][:, :, None]
             - feats["token_index"][:, None, :]

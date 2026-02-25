@@ -121,10 +121,7 @@ def compute_aggregated_metric(logits, end=1.0):
         start=0.5 * bin_width, end=end, step=bin_width, device=logits.device
     )
     probs = nn.functional.softmax(logits, dim=-1)
-    plddt = torch.sum(
-        probs * bounds.view(*((1,) * len(probs.shape[:-1])), *bounds.shape),
-        dim=-1,
-    )
+    plddt = probs @ bounds.to(probs.dtype)
     return plddt
 
 
@@ -156,12 +153,13 @@ def compute_ptms(logits, x_preds, feats, multiplicity):
         start=0.5 * bin_width, end=end, step=bin_width, device=logits.device
     ).unsqueeze(0)
     N_res = mask_pad.sum(dim=-1, keepdim=True)
-    tm_value = tm_function(pae_value, N_res).unsqueeze(1).unsqueeze(2)
+    tm_value = tm_function(pae_value, N_res)
     probs = nn.functional.softmax(logits, dim=-1)
-    tm_expected_value = torch.sum(
-        probs * tm_value,
-        dim=-1,
-    )  # shape (B, N, N)
+    tm_expected_value = torch.einsum(
+        "bijn,bn->bij",
+        probs,
+        tm_value.to(probs.dtype),
+    )
     ptm = torch.max(
         torch.sum(tm_expected_value * pair_mask_ptm, dim=-1)
         / (torch.sum(pair_mask_ptm, dim=-1) + 1e-5),

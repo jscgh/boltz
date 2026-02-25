@@ -70,6 +70,7 @@ class PairformerLayer(nn.Module):
         chunk_size_transition_z: int = None,
         chunk_size_tri_attn: Optional[int] = None,
         triangle_mult_gate_nchunks: int = 1,
+        triangle_mult_inplace_chunk_size: int = 256,
         use_trifast: bool = False,
     ) -> tuple[Tensor, Tensor]:
         # Compute pairwise stack
@@ -88,6 +89,7 @@ class PairformerLayer(nn.Module):
                 mask=pair_mask,
                 triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
                 inplace_safe=True,
+                _inplace_chunk_size=triangle_mult_inplace_chunk_size,
                 _add_with_inplace=True,
             )
 
@@ -106,6 +108,7 @@ class PairformerLayer(nn.Module):
                 mask=pair_mask,
                 triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
                 inplace_safe=True,
+                _inplace_chunk_size=triangle_mult_inplace_chunk_size,
                 _add_with_inplace=True,
             )
 
@@ -193,6 +196,7 @@ class PairformerModule(nn.Module):
         chunk_size_transition_z: int = None,
         chunk_size_tri_attn: Optional[int] = 128,
         triangle_mult_gate_nchunks: int = 1,
+        triangle_mult_inplace_chunk_size: int = 256,
         chunk_size_threshold: int = 384,
         use_trifast: bool = False,
     ) -> tuple[Tensor, Tensor]:
@@ -236,6 +240,7 @@ class PairformerModule(nn.Module):
                     chunk_size_transition_z,
                     chunk_size_tri_attn,
                     triangle_mult_gate_nchunks,
+                    triangle_mult_inplace_chunk_size,
                     use_trifast=use_trifast,
                 )
             else:
@@ -244,6 +249,7 @@ class PairformerModule(nn.Module):
                     chunk_size_transition_z,
                     chunk_size_tri_attn,
                     triangle_mult_gate_nchunks, 
+                    triangle_mult_inplace_chunk_size,
                     use_trifast=use_trifast
                 )
         return s, z
@@ -284,6 +290,7 @@ class PairformerNoSeqLayer(nn.Module):
         chunk_size_transition_z: Optional[int] = None,
         chunk_size_tri_attn: Optional[int] = None,
         triangle_mult_gate_nchunks: int = 1,
+        triangle_mult_inplace_chunk_size: int = 256,
         use_trifast: bool = False,
     ) -> Tensor:
         # Compute pairwise stack
@@ -302,6 +309,7 @@ class PairformerNoSeqLayer(nn.Module):
                 mask=pair_mask,
                 triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
                 inplace_safe=True,
+                _inplace_chunk_size=triangle_mult_inplace_chunk_size,
                 _add_with_inplace=True,
             )
 
@@ -320,6 +328,7 @@ class PairformerNoSeqLayer(nn.Module):
                 mask=pair_mask,
                 triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
                 inplace_safe=True,
+                _inplace_chunk_size=triangle_mult_inplace_chunk_size,
                 _add_with_inplace=True,
             )
 
@@ -390,16 +399,30 @@ class PairformerNoSeqModule(nn.Module):
         if not self.training:
             if z.shape[1] > const.chunk_size_threshold:
                 chunk_size_tri_attn = 128
+                chunk_size_transition_z = 32
             else:
                 chunk_size_tri_attn = 512
+                chunk_size_transition_z = 128
         else:
             chunk_size_tri_attn = None
+            chunk_size_transition_z = None
 
         for layer in self.layers:
             if self.activation_checkpointing and self.training:
                 z = torch.utils.checkpoint.checkpoint(
-                    layer, z, pair_mask, chunk_size_tri_attn, use_trifast=use_trifast
+                    layer,
+                    z,
+                    pair_mask,
+                    chunk_size_transition_z,
+                    chunk_size_tri_attn,
+                    use_trifast=use_trifast,
                 )
             else:
-                z = layer(z, pair_mask, chunk_size_tri_attn, use_trifast=use_trifast)
+                z = layer(
+                    z,
+                    pair_mask,
+                    chunk_size_transition_z=chunk_size_transition_z,
+                    chunk_size_tri_attn=chunk_size_tri_attn,
+                    use_trifast=use_trifast,
+                )
         return z

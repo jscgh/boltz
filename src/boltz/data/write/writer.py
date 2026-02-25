@@ -224,7 +224,7 @@ class BoltzWriter(BasePredictionWriter):
                         struct_dir
                         / f"plddt_{record.id}_model_{idx_to_rank[model_idx]}.npz"
                     )
-                    np.savez_compressed(path, plddt=plddt.cpu().numpy())
+                    np.savez_compressed(path, plddt=plddt.float().cpu().numpy())
 
                 # Save pae
                 if "pae" in prediction:
@@ -233,7 +233,7 @@ class BoltzWriter(BasePredictionWriter):
                         struct_dir
                         / f"pae_{record.id}_model_{idx_to_rank[model_idx]}.npz"
                     )
-                    np.savez_compressed(path, pae=pae.cpu().numpy())
+                    np.savez_compressed(path, pae=pae.float().cpu().numpy())
 
                 # Save pde
                 if "pde" in prediction:
@@ -242,7 +242,7 @@ class BoltzWriter(BasePredictionWriter):
                         struct_dir
                         / f"pde_{record.id}_model_{idx_to_rank[model_idx]}.npz"
                     )
-                    np.savez_compressed(path, pde=pde.cpu().numpy())
+                    np.savez_compressed(path, pde=pde.float().cpu().numpy())
 
     def on_predict_epoch_end(
         self,

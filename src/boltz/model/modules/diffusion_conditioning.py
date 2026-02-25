@@ -98,23 +98,25 @@ class DiffusionConditioning(Module):
             z=z,  # Float['b n n tz'],
         )
 
-        atom_enc_bias = []
-        for layer in self.atom_enc_proj_z:
-            atom_enc_bias.append(layer(p))
-        atom_enc_bias = torch.cat(atom_enc_bias, dim=-1)
+        atom_enc_chunks = [layer(p) for layer in self.atom_enc_proj_z]
+        atom_enc_bias = torch.cat(atom_enc_chunks, dim=-1)
+        del atom_enc_chunks
 
-        atom_dec_bias = []
-        for layer in self.atom_dec_proj_z:
-            atom_dec_bias.append(layer(p))
-        atom_dec_bias = torch.cat(atom_dec_bias, dim=-1)
+        atom_dec_chunks = [layer(p) for layer in self.atom_dec_proj_z]
+        atom_dec_bias = torch.cat(atom_dec_chunks, dim=-1)
+        del atom_dec_chunks
 
-        token_trans_bias = []
-        for layer in self.token_trans_proj_z:
-            #token_trans_bias.append(layer(z))
-            token_trans_bias.append(layer(z).float())
-        # casting before cat avoids large duplication later
+        first_token_bias = self.token_trans_proj_z[0](z)
+        token_bias_dim = first_token_bias.shape[-1]
+        token_trans_bias = z.new_empty(
+            (*first_token_bias.shape[:-1], token_bias_dim * len(self.token_trans_proj_z))
+        )
+        token_trans_bias[..., :token_bias_dim] = first_token_bias
+        del first_token_bias
+        for i, layer in enumerate(self.token_trans_proj_z[1:], start=1):
+            start = i * token_bias_dim
+            end = start + token_bias_dim
+            token_trans_bias[..., start:end] = layer(z)
         del z
-
-        token_trans_bias = torch.cat(token_trans_bias, dim=-1)
 
         return q, c, to_keys, atom_enc_bias, atom_dec_bias, token_trans_bias

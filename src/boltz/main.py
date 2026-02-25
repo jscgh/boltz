@@ -866,6 +866,16 @@ def cli() -> None:
     default=1,
 )
 @click.option(
+    "--triangle_mult_chunk_size",
+    "triangle_mult_inplace_chunk_size",
+    type=int,
+    help=(
+        "Triangle multiplication chunk size for inference in-place path "
+        "Default is 256. "
+    ),
+    default=256,
+)
+@click.option(
     "--chunk_size_threshold",
     type=int,
     help="Maximum size before chunking. Default is 384.",
@@ -1016,6 +1026,7 @@ def predict(  # noqa: C901, PLR0915, PLR0912
     chunk_size_outer_product: int = 4,
     chunk_size_tri_attn: int = 128,
     triangle_mult_gate_nchunks: int = 1,
+    triangle_mult_inplace_chunk_size: int = 256,
     chunk_size_threshold: int = 384,
     use_trifast: bool = False,
     use_bfloat16: bool = False,
@@ -1238,7 +1249,8 @@ def predict(  # noqa: C901, PLR0915, PLR0912
             "chunk_size_outer_product": chunk_size_outer_product,
             "chunk_size_tri_attn": chunk_size_tri_attn,
             "chunk_size_threshold": chunk_size_threshold,
-            "triangle_mult_gate_nchunks": triangle_mult_gate_nchunks
+            "triangle_mult_gate_nchunks": triangle_mult_gate_nchunks,
+            "triangle_mult_inplace_chunk_size": triangle_mult_inplace_chunk_size,
         }
 
         steering_args = BoltzSteeringParams()
@@ -1330,7 +1342,8 @@ def predict(  # noqa: C901, PLR0915, PLR0912
             "chunk_size_outer_product": chunk_size_outer_product,
             "chunk_size_tri_attn": chunk_size_tri_attn,
             "chunk_size_threshold": chunk_size_threshold,
-            "triangle_mult_gate_nchunks": triangle_mult_gate_nchunks
+            "triangle_mult_gate_nchunks": triangle_mult_gate_nchunks,
+            "triangle_mult_inplace_chunk_size": triangle_mult_inplace_chunk_size,
         }
 
         # Load affinity model

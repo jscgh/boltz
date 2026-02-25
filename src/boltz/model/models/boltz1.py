@@ -276,6 +276,7 @@ class Boltz1(LightningModule):
         chunk_size_outer_product: int = None,
         chunk_size_tri_attn: int = None,
         triangle_mult_gate_nchunks: int = 1,
+        triangle_mult_inplace_chunk_size: int = 256,
         chunk_size_threshold: int = 384
     ) -> dict[str, Tensor]:
         dict_out = {}
@@ -346,6 +347,7 @@ class Boltz1(LightningModule):
                                 chunk_size_outer_product=chunk_size_outer_product, 
                                 chunk_size_tri_attn=chunk_size_tri_attn,
                                 triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                                triangle_mult_inplace_chunk_size=triangle_mult_inplace_chunk_size,
                                 chunk_size_threshold=chunk_size_threshold
                             )
                         z += z_orig.cuda() #Surprisingly the skip connection barely impacts output quality
@@ -369,6 +371,7 @@ class Boltz1(LightningModule):
                         chunk_size_transition_z=chunk_size_transition_z, 
                         chunk_size_tri_attn=chunk_size_tri_attn,
                         triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                        triangle_mult_inplace_chunk_size=triangle_mult_inplace_chunk_size,
                         chunk_size_threshold=chunk_size_threshold
                         )
 
@@ -448,6 +451,7 @@ class Boltz1(LightningModule):
                     chunk_size_outer_product=chunk_size_outer_product,
                     chunk_size_tri_attn=chunk_size_tri_attn,
                     triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                    triangle_mult_inplace_chunk_size=triangle_mult_inplace_chunk_size,
                     chunk_size_threshold=chunk_size_threshold
                 )
             )
@@ -1222,6 +1226,7 @@ class Boltz1(LightningModule):
                 chunk_size_outer_product=self.predict_args["chunk_size_outer_product"],
                 chunk_size_tri_attn=self.predict_args["chunk_size_tri_attn"],            
                 triangle_mult_gate_nchunks=self.predict_args["triangle_mult_gate_nchunks"],
+                triangle_mult_inplace_chunk_size=self.predict_args.get("triangle_mult_inplace_chunk_size", 256),
                 chunk_size_threshold=self.predict_args["chunk_size_threshold"]
             )
             pred_dict = {"exception": False}

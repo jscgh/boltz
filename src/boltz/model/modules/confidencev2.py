@@ -124,6 +124,7 @@ class ConfidenceModule(nn.Module):
         chunk_size_outer_product: int = None,
         chunk_size_tri_attn: int = None,
         triangle_mult_gate_nchunks: int = 1,
+        triangle_mult_inplace_chunk_size: int = 256,
         chunk_size_threshold: int=384
     ):
         if run_sequentially and multiplicity > 1:
@@ -151,6 +152,7 @@ class ConfidenceModule(nn.Module):
                         chunk_size_outer_product=chunk_size_outer_product,
                         chunk_size_tri_attn= chunk_size_tri_attn,
                         triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                        triangle_mult_inplace_chunk_size=triangle_mult_inplace_chunk_size,
                         chunk_size_threshold=chunk_size_threshold
                     )
                 )
@@ -256,6 +258,7 @@ class ConfidenceModule(nn.Module):
             chunk_size_transition_z=chunk_size_transition_z, 
             chunk_size_tri_attn=chunk_size_tri_attn,
             triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+            triangle_mult_inplace_chunk_size=triangle_mult_inplace_chunk_size,
             chunk_size_threshold=chunk_size_threshold
         )
 
@@ -543,12 +546,29 @@ class ConfidenceHeads(nn.Module):
             out_dict["ligand_iptm"] = ligand_iptm
             out_dict["protein_iptm"] = protein_iptm
             out_dict["pair_chains_iptm"] = pair_chains_iptm
-        except Exception as e:
-            print(f"Error in compute_ptms: {e}")
-            out_dict["ptm"] = torch.zeros_like(complex_plddt)
-            out_dict["iptm"] = torch.zeros_like(complex_plddt)
-            out_dict["ligand_iptm"] = torch.zeros_like(complex_plddt)
-            out_dict["protein_iptm"] = torch.zeros_like(complex_plddt)
-            out_dict["pair_chains_iptm"] = torch.zeros_like(complex_plddt)
+        except torch.OutOfMemoryError as e:
+            print(f"GPU OOM in compute_ptms, retrying on CPU: {e}")
+            torch.cuda.empty_cache()
+            feats_cpu = {
+                key: (value.cpu() if isinstance(value, torch.Tensor) else value)
+                for key, value in feats.items()
+            }
+            ptm, iptm, ligand_iptm, protein_iptm, pair_chains_iptm = compute_ptms(
+                pae_logits.float().cpu(),
+                x_pred.float().cpu(),
+                feats_cpu,
+                multiplicity,
+            )
+            out_dict["ptm"] = ptm.to(device=complex_plddt.device, dtype=complex_plddt.dtype)
+            out_dict["iptm"] = iptm.to(device=complex_plddt.device, dtype=complex_plddt.dtype)
+            out_dict["ligand_iptm"] = ligand_iptm.to(device=complex_plddt.device, dtype=complex_plddt.dtype)
+            out_dict["protein_iptm"] = protein_iptm.to(device=complex_plddt.device, dtype=complex_plddt.dtype)
+            out_dict["pair_chains_iptm"] = {
+                idx1: {
+                    idx2: tensor.to(device=complex_plddt.device, dtype=complex_plddt.dtype)
+                    for idx2, tensor in pair_chains_iptm[idx1].items()
+                }
+                for idx1 in pair_chains_iptm
+            }
 
         return out_dict

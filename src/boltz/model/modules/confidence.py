@@ -197,6 +197,7 @@ class ConfidenceModule(nn.Module):
         chunk_size_outer_product: int = None,
         chunk_size_tri_attn: int = None,
         triangle_mult_gate_nchunks: int = 1,
+        triangle_mult_inplace_chunk_size: int = 256,
         chunk_size_threshold: int=384
     ):
         if run_sequentially and multiplicity > 1:
@@ -227,6 +228,7 @@ class ConfidenceModule(nn.Module):
                         chunk_size_outer_product=chunk_size_outer_product,
                         chunk_size_tri_attn= chunk_size_tri_attn,
                         triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                        triangle_mult_inplace_chunk_size=triangle_mult_inplace_chunk_size,
                         chunk_size_threshold=chunk_size_threshold
                     )
                 )
@@ -363,6 +365,7 @@ class ConfidenceModule(nn.Module):
                     chunk_size_outer_product=chunk_size_outer_product, 
                     chunk_size_tri_attn=chunk_size_tri_attn,
                     triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                    triangle_mult_inplace_chunk_size=triangle_mult_inplace_chunk_size,
                     chunk_size_threshold=chunk_size_threshold
                 )
             z += z_orig.cuda()
@@ -379,6 +382,7 @@ class ConfidenceModule(nn.Module):
                 chunk_size_transition_z=chunk_size_transition_z, 
                 chunk_size_tri_attn=chunk_size_tri_attn,
                 triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                triangle_mult_inplace_chunk_size=triangle_mult_inplace_chunk_size,
                 chunk_size_threshold=chunk_size_threshold)
 
             #s, z = self.final_s_norm(s), self.final_z_norm(z)
@@ -396,7 +400,8 @@ class ConfidenceModule(nn.Module):
                 s, z, mask=mask, pair_mask=pair_mask, use_trifast=use_trifast,
                 chunk_size_transition_z=chunk_size_transition_z, 
                 chunk_size_tri_attn=chunk_size_tri_attn,
-                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks)
+                triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
+                triangle_mult_inplace_chunk_size=triangle_mult_inplace_chunk_size)
 
             # AF3 has residual connections, we remove them
             s = s_t

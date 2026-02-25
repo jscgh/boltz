@@ -158,7 +158,7 @@ class DiffusionModule(Module):
             s=s,
             bias=diffusion_conditioning[
                 "token_trans_bias"
-            ].float(),  # note z is not expanded with multiplicity until after bias is computed
+            ],  # note z is not expanded with multiplicity until after bias is computed
             multiplicity=multiplicity,
         )
         a = self.a_norm(a)

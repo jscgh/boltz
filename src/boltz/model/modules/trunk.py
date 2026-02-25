@@ -214,6 +214,7 @@ class MSAModule(nn.Module):
         chunk_size_outer_product: int = 4,
         chunk_size_tri_attn: int = 128,
         triangle_mult_gate_nchunks: int = 1,
+        triangle_mult_inplace_chunk_size: int = 256,
         chunk_size_threshold: int = 384
     ) -> Tensor:
         """Perform the forward pass.
@@ -302,6 +303,7 @@ class MSAModule(nn.Module):
                 chunk_size_outer_product,
                 chunk_size_tri_attn,
                 triangle_mult_gate_nchunks,
+                triangle_mult_inplace_chunk_size,
                 use_trifast=use_trifast,
             )
         return z
@@ -379,6 +381,7 @@ class MSALayer(nn.Module):
         chunk_size_outer_product: int = None,
         chunk_size_tri_attn: int = None,
         triangle_mult_gate_nchunks: int = 1,
+        triangle_mult_inplace_chunk_size: int = 256,
         use_trifast: bool = False,
     ) -> tuple[Tensor, Tensor]:
         """Perform the forward pass.
@@ -407,7 +410,12 @@ class MSALayer(nn.Module):
         #m = m + msa_dropout * self.pair_weighted_averaging(
         get_dropout_mask(self.msa_dropout, m, self.training)
         m += self.pair_weighted_averaging(
-            m, z, token_mask, chunk_heads_pwa
+            m,
+            z,
+            token_mask,
+            chunk_heads_pwa,
+            chunk_size_transition_msa,
+            chunk_size_transition_z,
         )
         #m = m + self.msa_transition(m, chunk_size_transition_msa)
         m += self.msa_transition(m, chunk_size_transition_msa)
@@ -432,6 +440,7 @@ class MSALayer(nn.Module):
                 mask=token_mask,
                 triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
                 inplace_safe=True,
+                _inplace_chunk_size=triangle_mult_inplace_chunk_size,
                 _add_with_inplace=True,
             )
 
@@ -450,6 +459,7 @@ class MSALayer(nn.Module):
                 mask=token_mask,
                 triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
                 inplace_safe=True,
+                _inplace_chunk_size=triangle_mult_inplace_chunk_size,
                 _add_with_inplace=True,
             )
 
@@ -572,6 +582,7 @@ class PairformerModule(nn.Module):
         chunk_size_transition_z: int = None,
         chunk_size_tri_attn: Optional[int] = 128,
         triangle_mult_gate_nchunks: int = 1,
+        triangle_mult_inplace_chunk_size: int = 256,
         chunk_size_threshold: int = 384,
         use_trifast: bool = False,
     ) -> tuple[Tensor, Tensor]:
@@ -614,6 +625,7 @@ class PairformerModule(nn.Module):
                 chunk_size_transition_z,
                 chunk_size_tri_attn, 
                 triangle_mult_gate_nchunks, 
+                triangle_mult_inplace_chunk_size,
                 use_trifast=use_trifast
             )
         return s, z
@@ -684,6 +696,7 @@ class PairformerLayer(nn.Module):
         chunk_size_transition_z: int = None,
         chunk_size_tri_attn: Optional[int] = None,
         triangle_mult_gate_nchunks: int = 1,
+        triangle_mult_inplace_chunk_size: int = 256,
         use_trifast: bool = False,
     ) -> tuple[Tensor, Tensor]:
         """Perform the forward pass."""
@@ -703,6 +716,7 @@ class PairformerLayer(nn.Module):
                 mask=pair_mask,
                 triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
                 inplace_safe=True,
+                _inplace_chunk_size=triangle_mult_inplace_chunk_size,
                 _add_with_inplace=True,
             )
 
@@ -721,6 +735,7 @@ class PairformerLayer(nn.Module):
                 mask=pair_mask,
                 triangle_mult_gate_nchunks=triangle_mult_gate_nchunks,
                 inplace_safe=True,
+                _inplace_chunk_size=triangle_mult_inplace_chunk_size,
                 _add_with_inplace=True,
             )
 
