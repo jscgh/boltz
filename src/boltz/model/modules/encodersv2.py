@@ -77,7 +77,8 @@ class RelativePositionEncoder(Module):
         d_residue = torch.where(
             b_same_chain, d_residue, torch.zeros_like(d_residue) + 2 * self.r_max + 1
         )
-        a_rel_pos = one_hot(d_residue, 2 * self.r_max + 2)
+        a_rel_pos = one_hot(d_residue, 2 * self.r_max + 2).bfloat16()
+        del d_residue
         d_token = torch.clip(
             feats["token_index"][:, :, None]
             - feats["token_index"][:, None, :]
@@ -90,7 +91,8 @@ class RelativePositionEncoder(Module):
             d_token,
             torch.zeros_like(d_token) + 2 * self.r_max + 1,
         )
-        a_rel_token = one_hot(d_token, 2 * self.r_max + 2)
+        a_rel_token = one_hot(d_token, 2 * self.r_max + 2).bfloat16()
+        del d_token
 
         d_chain = torch.clip(
             feats["sym_id"][:, :, None] - feats["sym_id"][:, None, :] + self.s_max,
@@ -103,15 +105,16 @@ class RelativePositionEncoder(Module):
             d_chain,
         )
         # Note: added  | (~b_same_entity) based on observation of ProteinX manuscript
-        a_rel_chain = one_hot(d_chain, 2 * self.s_max + 2)
+        a_rel_chain = one_hot(d_chain, 2 * self.s_max + 2).bfloat16()
+        del d_chain
 
         p = self.linear_layer(
             torch.cat(
                 [
-                    a_rel_pos.float(),
-                    a_rel_token.float(),
-                    b_same_entity.unsqueeze(-1).float(),
-                    a_rel_chain.float(),
+                    a_rel_pos,
+                    a_rel_token,
+                    b_same_entity.unsqueeze(-1).bfloat16(),
+                    a_rel_chain,
                 ],
                 dim=-1,
             )
