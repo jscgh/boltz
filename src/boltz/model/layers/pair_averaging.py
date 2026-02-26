@@ -79,16 +79,19 @@ class PairWeightedAveraging(nn.Module):
 
         if chunk_heads and not self.training:
             # Compute heads sequentially
-            msa_chunk_size = (
-                m.shape[1]
-                if chunk_size_msa is None or chunk_size_msa <= 0
-                else chunk_size_msa
-            )
-            pair_chunk_size = (
-                z.shape[1]
-                if chunk_size_pair is None or chunk_size_pair <= 0
-                else chunk_size_pair
-            )
+            if chunk_size_msa is None or chunk_size_msa <= 0:
+                msa_chunk_size = m.shape[1]
+            elif z.shape[1] <= 512:
+                msa_chunk_size = m.shape[1]
+            else:
+                msa_chunk_size = min(m.shape[1], max(128, int(chunk_size_msa)))
+
+            if chunk_size_pair is None or chunk_size_pair <= 0:
+                pair_chunk_size = z.shape[1]
+            elif z.shape[1] <= 512:
+                pair_chunk_size = z.shape[1]
+            else:
+                pair_chunk_size = min(z.shape[1], max(256, int(chunk_size_pair)))
             o_out = torch.zeros_like(m)
 
             for head_idx in range(self.num_heads):

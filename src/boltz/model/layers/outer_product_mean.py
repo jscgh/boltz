@@ -55,7 +55,10 @@ class OuterProductMean(nn.Module):
 
         # Compute outer product mean
         if chunk_size is not None and not self.training:
-            pair_chunk_size = max(32, int(chunk_size) * 8)
+            if m.shape[2] <= 512:
+                pair_chunk_size = m.shape[2]
+            else:
+                pair_chunk_size = min(m.shape[2], max(256, int(chunk_size) * 8))
 
             # Compute pairwise mask
             for i in range(0, mask.shape[1], 64):
