@@ -55,6 +55,8 @@ class OuterProductMean(nn.Module):
 
         # Compute outer product mean
         if chunk_size is not None and not self.training:
+            pair_chunk_size = max(32, int(chunk_size) * 8)
+
             # Compute pairwise mask
             for i in range(0, mask.shape[1], 64):
                 if i == 0:
@@ -74,15 +76,29 @@ class OuterProductMean(nn.Module):
                     :, i * self.c_hidden : (i + chunk_size) * self.c_hidden
                 ]
 
-                z = torch.einsum("bsic,bsjd->bijcd", a_chunk, b)
-                z = z.reshape(*z.shape[:3], -1)
-                z = z / num_mask
+                for pair_start in range(0, a_chunk.shape[2], pair_chunk_size):
+                    pair_end = min(pair_start + pair_chunk_size, a_chunk.shape[2])
+                    a_pair_chunk = a_chunk[:, :, pair_start:pair_end]
 
-                # Project to output
-                if i == 0:
-                    z_out = z.to(m) @ sliced_weight_proj_o.T
-                else:
-                    z_out = z_out + z.to(m) @ sliced_weight_proj_o.T
+                    z_chunk = torch.einsum("bsic,bsjd->bijcd", a_pair_chunk, b)
+                    z_chunk = z_chunk.reshape(*z_chunk.shape[:3], -1)
+                    z_chunk = z_chunk / num_mask[:, pair_start:pair_end]
+
+                    proj_chunk = z_chunk.to(m) @ sliced_weight_proj_o.T
+
+                    if i == 0 and pair_start == 0:
+                        z_out = torch.zeros(
+                            m.shape[0],
+                            m.shape[2],
+                            m.shape[2],
+                            self.proj_o.out_features,
+                            device=m.device,
+                            dtype=m.dtype,
+                        )
+
+                    z_out[:, pair_start:pair_end] += proj_chunk
+
+                    del a_pair_chunk, z_chunk, proj_chunk
             
             z_out = z_out + self.proj_o.bias # add bias
             return z_out

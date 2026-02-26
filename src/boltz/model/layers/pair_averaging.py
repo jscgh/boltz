@@ -79,68 +79,71 @@ class PairWeightedAveraging(nn.Module):
 
         if chunk_heads and not self.training:
             # Compute heads sequentially
-            #o_chunks = []
+            msa_chunk_size = (
+                m.shape[1]
+                if chunk_size_msa is None or chunk_size_msa <= 0
+                else chunk_size_msa
+            )
+            pair_chunk_size = (
+                z.shape[1]
+                if chunk_size_pair is None or chunk_size_pair <= 0
+                else chunk_size_pair
+            )
+            o_out = torch.zeros_like(m)
+
             for head_idx in range(self.num_heads):
                 sliced_weight_proj_m = self.proj_m.weight[
                     head_idx * self.c_h : (head_idx + 1) * self.c_h, :
                 ]
-                '''
-                sliced_weight_proj_g = self.proj_g.weight[
-                    head_idx * self.c_h : (head_idx + 1) * self.c_h, :
-                ]
-                sliced_weight_proj_z = self.proj_z.weight[head_idx : (head_idx + 1), :]
-                sliced_weight_proj_o = self.proj_o.weight[
-                    :, head_idx * self.c_h : (head_idx + 1) * self.c_h
-                ]
-                '''
-
-                # Project input tensors
-                v: Tensor = m @ sliced_weight_proj_m.T
-                del sliced_weight_proj_m
-                v = v.reshape(*v.shape[:3], 1, self.c_h)
-                v = v.permute(0, 3, 1, 2, 4)
 
                 sliced_weight_proj_z = self.proj_z.weight[head_idx : (head_idx + 1), :]
-
-                # Compute weights
-                b: Tensor = z @ sliced_weight_proj_z.T
-                del sliced_weight_proj_z
-                b = b.permute(0, 3, 1, 2)
-                #b = b + (1 - mask[:, None]) * -self.inf
-                b += (1 - mask[:, None]) * -self.inf
-                w = torch.softmax(b, dim=-1)
-                del b
 
                 sliced_weight_proj_g = self.proj_g.weight[
                     head_idx * self.c_h : (head_idx + 1) * self.c_h, :
                 ]
-
-                # Compute gating
-                g: Tensor = m @ sliced_weight_proj_g.T
-                del sliced_weight_proj_g
-                g = g.sigmoid()
-
-                # Compute output
-                o = torch.einsum("bhij,bhsjd->bhsid", w, v)
-                del w
-                del v
-                o = o.permute(0, 2, 3, 1, 4)
-                o = o.reshape(*o.shape[:3], 1 * self.c_h)
-                #o_chunks = g * o
-                o *= g
-                del g
-
                 sliced_weight_proj_o = self.proj_o.weight[
                     :, head_idx * self.c_h : (head_idx + 1) * self.c_h
                 ]
 
-                if head_idx == 0:
-                    #o_out = o_chunks @ sliced_weight_proj_o.T
-                    o_out = o @ sliced_weight_proj_o.T
-                else:
-                    #o_out += o_chunks @ sliced_weight_proj_o.T
-                    o_out += o @ sliced_weight_proj_o.T
+                # Compute output in MSA chunks to reduce peak memory
+                for msa_start in range(0, m.shape[1], msa_chunk_size):
+                    msa_end = min(msa_start + msa_chunk_size, m.shape[1])
+                    m_chunk = m[:, msa_start:msa_end]
+
+                    v: Tensor = m_chunk @ sliced_weight_proj_m.T
+                    v = v.reshape(*v.shape[:3], 1, self.c_h)
+                    v = v.permute(0, 3, 1, 2, 4)
+
+                    g: Tensor = m_chunk @ sliced_weight_proj_g.T
+                    g = g.sigmoid()
+
+                    for pair_start in range(0, z.shape[1], pair_chunk_size):
+                        pair_end = min(pair_start + pair_chunk_size, z.shape[1])
+                        z_chunk = z[:, pair_start:pair_end]
+                        mask_chunk = mask[:, pair_start:pair_end]
+
+                        b_chunk: Tensor = z_chunk @ sliced_weight_proj_z.T
+                        b_chunk = b_chunk.permute(0, 3, 1, 2)
+                        b_chunk += (1 - mask_chunk[:, None]) * -self.inf
+                        w_chunk = torch.softmax(b_chunk, dim=-1)
+
+                        o_chunk = torch.einsum("bhij,bhsjd->bhsid", w_chunk, v)
+                        o_chunk = o_chunk.permute(0, 2, 3, 1, 4)
+                        o_chunk = o_chunk.reshape(*o_chunk.shape[:3], self.c_h)
+                        o_chunk *= g[:, :, pair_start:pair_end]
+
+                        o_out[:, msa_start:msa_end, pair_start:pair_end] += (
+                            o_chunk @ sliced_weight_proj_o.T
+                        )
+
+                        del z_chunk, mask_chunk, b_chunk, w_chunk, o_chunk
+
+                    del m_chunk, v, g
+
                 del sliced_weight_proj_o
+                del sliced_weight_proj_g
+                del sliced_weight_proj_m
+                del sliced_weight_proj_z
             return o_out
         else:
             # Project input tensors
